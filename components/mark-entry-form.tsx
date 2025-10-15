@@ -1,0 +1,292 @@
+"use client"
+
+import type React from "react"
+
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { createClient } from "@/lib/supabase/client"
+import { Save, CheckCircle2 } from "lucide-react"
+
+type Category = {
+  id: string
+  name: string
+}
+
+type Participant = {
+  id: string
+  name: string
+}
+
+type Criterion = {
+  id: string
+  name: string
+  max_points: number
+  display_order: number
+}
+
+type Mark = {
+  criterion_id: string
+  points: string
+}
+
+interface MarkEntryFormProps {
+  categories: Category[]
+}
+
+export function MarkEntryForm({ categories }: MarkEntryFormProps) {
+  const [juryName, setJuryName] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState("")
+  const [selectedParticipant, setSelectedParticipant] = useState("")
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [criteria, setCriteria] = useState<Criterion[]>([])
+  const [marks, setMarks] = useState<Mark[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
+  const supabase = createClient()
+
+  // Load participants when category changes
+  useEffect(() => {
+    if (selectedCategory) {
+      loadParticipants(selectedCategory)
+      loadCriteria(selectedCategory)
+    } else {
+      setParticipants([])
+      setCriteria([])
+    }
+    setSelectedParticipant("")
+    setMarks([])
+  }, [selectedCategory])
+
+  // Load existing marks when participant changes
+  useEffect(() => {
+    if (selectedParticipant && juryName) {
+      loadExistingMarks()
+    }
+  }, [selectedParticipant, juryName])
+
+  const loadParticipants = async (categoryId: string) => {
+    const { data } = await supabase.from("participants").select("id, name").eq("category_id", categoryId).order("name")
+    setParticipants(data || [])
+  }
+
+  const loadCriteria = async (categoryId: string) => {
+    const { data } = await supabase
+      .from("criteria")
+      .select("id, name, max_points, display_order")
+      .eq("category_id", categoryId)
+      .order("display_order")
+
+    setCriteria(data || [])
+
+    // Initialize marks array
+    if (data) {
+      setMarks(data.map((c) => ({ criterion_id: c.id, points: "" })))
+    }
+  }
+
+  const loadExistingMarks = async () => {
+    const { data } = await supabase
+      .from("marks")
+      .select("criterion_id, points")
+      .eq("participant_id", selectedParticipant)
+      .eq("jury_member_name", juryName)
+
+    if (data && data.length > 0) {
+      setMarks((prevMarks) =>
+        prevMarks.map((mark) => {
+          const existing = data.find((d) => d.criterion_id === mark.criterion_id)
+          return existing ? { ...mark, points: existing.points.toString() } : mark
+        }),
+      )
+    }
+  }
+
+  const handleMarkChange = (criterionId: string, value: string) => {
+    setMarks((prevMarks) =>
+      prevMarks.map((mark) => (mark.criterion_id === criterionId ? { ...mark, points: value } : mark)),
+    )
+    setIsSaved(false)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!juryName || !selectedParticipant) {
+      alert("Please fill in all required fields")
+      return
+    }
+
+    // Validate all marks are entered
+    const invalidMarks = marks.filter((m) => !m.points || Number.parseFloat(m.points) < 0)
+    if (invalidMarks.length > 0) {
+      alert("Please enter valid scores for all criteria")
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      // Upsert marks (insert or update if exists)
+      const marksToSave = marks.map((mark) => ({
+        participant_id: selectedParticipant,
+        criterion_id: mark.criterion_id,
+        jury_member_name: juryName,
+        points: Number.parseFloat(mark.points),
+      }))
+
+      for (const mark of marksToSave) {
+        const { error } = await supabase.from("marks").upsert(mark, {
+          onConflict: "participant_id,criterion_id,jury_member_name",
+        })
+
+        if (error) throw error
+      }
+
+      setIsSaved(true)
+      setTimeout(() => setIsSaved(false), 3000)
+    } catch (error) {
+      console.error("Error saving marks:", error)
+      alert("Failed to save marks")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const getTotalScore = () => {
+    return marks.reduce((sum, mark) => sum + (Number.parseFloat(mark.points) || 0), 0)
+  }
+
+  const getMaxTotalScore = () => {
+    return criteria.reduce((sum, criterion) => sum + criterion.max_points, 0)
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Enter Marks</CardTitle>
+        <CardDescription>Select a category and participant, then enter scores for each criterion</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Jury Member Name */}
+          <div className="space-y-2">
+            <Label htmlFor="jury-name">Your Name (Jury Member)</Label>
+            <Input
+              id="jury-name"
+              value={juryName}
+              onChange={(e) => setJuryName(e.target.value)}
+              placeholder="Enter your name"
+              required
+            />
+          </div>
+
+          {/* Category Selection */}
+          <div className="space-y-2">
+            <Label htmlFor="category">Award Category</Label>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory} required>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Participant Selection */}
+          {selectedCategory && (
+            <div className="space-y-2">
+              <Label htmlFor="participant">Participant</Label>
+              <Select value={selectedParticipant} onValueChange={setSelectedParticipant} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a participant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {participants.map((participant) => (
+                    <SelectItem key={participant.id} value={participant.id}>
+                      {participant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Criteria Scoring */}
+          {selectedParticipant && criteria.length > 0 && (
+            <div className="space-y-4">
+              <div className="border-t pt-4">
+                <h3 className="font-semibold mb-4">Evaluation Criteria</h3>
+                <div className="space-y-4">
+                  {criteria.map((criterion, index) => {
+                    const mark = marks.find((m) => m.criterion_id === criterion.id)
+                    return (
+                      <div key={criterion.id} className="space-y-2">
+                        <Label htmlFor={`criterion-${criterion.id}`}>
+                          {index + 1}. {criterion.name}
+                          <span className="text-muted-foreground ml-2">(Max: {criterion.max_points} points)</span>
+                        </Label>
+                        <Input
+                          id={`criterion-${criterion.id}`}
+                          type="number"
+                          min="0"
+                          max={criterion.max_points}
+                          step="0.5"
+                          value={mark?.points || ""}
+                          onChange={(e) => handleMarkChange(criterion.id, e.target.value)}
+                          placeholder="0.0"
+                          required
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Total Score */}
+              <div className="border-t pt-4">
+                <div className="flex justify-between items-center text-lg font-semibold">
+                  <span>Total Score:</span>
+                  <span className="text-primary">
+                    {getTotalScore().toFixed(1)} / {getMaxTotalScore()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? (
+                  "Saving..."
+                ) : isSaved ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Saved Successfully
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Marks
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {selectedCategory && participants.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No participants found for this category. Please add participants in the Admin Setup.
+            </p>
+          )}
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
