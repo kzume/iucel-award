@@ -15,7 +15,7 @@ export default function HomePage() {
             </div>
             <h1 className="text-4xl font-bold mb-3 text-balance">IUCEL Competition Jury System</h1>
             <p className="text-lg text-muted-foreground text-pretty">
-              Professional marking and evaluation platform for competition judges
+              Marking and evaluation platform for IUCEL judges
             </p>
           </div>
 
