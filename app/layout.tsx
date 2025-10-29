@@ -9,7 +9,8 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "IUCEL competition",
   description: "Created by AIDIL",
-  generator: "vercel",
+  organisation: "IUCEL",
+    generator: 'v0.app'
 }
 
 export default function RootLayout({
