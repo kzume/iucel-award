@@ -7,7 +7,7 @@ import { Suspense } from "react"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "IUCEL award",
+  title: "IUCEL competition",
   description: "Created by AIDIL",
   generator: "vercel",
 }
