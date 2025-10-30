@@ -7,16 +7,17 @@ import { Button } from "@/components/ui/button"
 export default async function AdminPage() {
   const supabase = await createClient()
 
-  // Fetch all data
-  const [categoriesResult, criteriaResult, participantsResult] = await Promise.all([
+  const [categoriesResult, criteriaResult, participantsResult, juryResult] = await Promise.all([
     supabase.from("categories").select("*").order("name"),
     supabase.from("criteria").select("*, categories(name)").order("display_order"),
     supabase.from("participants").select("*, categories(name)").order("name"),
+    supabase.from("jury").select("*").order("name"),
   ])
 
   const categories = categoriesResult.data || []
   const criteria = criteriaResult.data || []
   const participants = participantsResult.data || []
+  const jury = juryResult.data || []
 
   return (
     <div className="min-h-screen bg-background">
@@ -37,8 +38,7 @@ export default async function AdminPage() {
             </div>
           </div>
 
-          {/* Admin Tabs */}
-          <AdminTabs categories={categories} criteria={criteria} participants={participants} />
+          <AdminTabs categories={categories} criteria={criteria} participants={participants} jury={jury} />
         </div>
       </div>
     </div>

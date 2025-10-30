@@ -17,6 +17,7 @@ type LeaderboardEntry = {
   total_score: number
   max_score: number
   percentage: number
+  jury_count: number
   criteria_scores: {
     criterion_name: string
     score: number
@@ -73,13 +74,13 @@ export function LeaderboardView({ categories }: LeaderboardViewProps) {
         let maxScore = 0
 
         for (const criterion of criteria) {
-          // Get average score for this participant and criterion
           const { data: marks } = await supabase
             .from("marks")
             .select("points")
             .eq("participant_id", participant.id)
             .eq("criterion_id", criterion.id)
 
+          // Calculate average only if marks exist
           const avgScore =
             marks && marks.length > 0
               ? marks.reduce((sum, m) => sum + Number.parseFloat(m.points.toString()), 0) / marks.length
@@ -95,12 +96,20 @@ export function LeaderboardView({ categories }: LeaderboardViewProps) {
           maxScore += criterion.max_points
         }
 
+        const { data: juryMarks } = await supabase
+          .from("marks")
+          .select("jury_member_name")
+          .eq("participant_id", participant.id)
+
+        const uniqueJury = new Set(juryMarks?.map((m) => m.jury_member_name) || [])
+
         entries.push({
           participant_id: participant.id,
           participant_name: participant.name,
           total_score: totalScore,
           max_score: maxScore,
           percentage: maxScore > 0 ? (totalScore / maxScore) * 100 : 0,
+          jury_count: uniqueJury.size,
           criteria_scores: criteriaScores,
         })
       }
@@ -152,7 +161,7 @@ export function LeaderboardView({ categories }: LeaderboardViewProps) {
         <Card>
           <CardHeader>
             <CardTitle>Rankings</CardTitle>
-            <CardDescription>Scores are averaged across all jury members</CardDescription>
+            <CardDescription>Scores are averaged across jury members who entered marks</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -173,7 +182,10 @@ export function LeaderboardView({ categories }: LeaderboardViewProps) {
                         </div>
                         <div>
                           <h3 className="font-semibold text-lg">{entry.participant_name}</h3>
-                          <p className="text-sm text-muted-foreground">{entry.percentage.toFixed(1)}% overall</p>
+                          <p className="text-sm text-muted-foreground">
+                            {entry.percentage.toFixed(1)}% overall • {entry.jury_count} jury member
+                            {entry.jury_count !== 1 ? "s" : ""}
+                          </p>
                         </div>
                       </div>
                       <div className="text-right">

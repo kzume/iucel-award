@@ -21,6 +21,8 @@ type Participant = {
   id: string
   name: string
   category_id: string
+  institution: string | null
+  email: string | null
   categories: { name: string } | null
 }
 
@@ -31,6 +33,8 @@ interface ParticipantsTabProps {
 
 export function ParticipantsTab({ participants, categories }: ParticipantsTabProps) {
   const [name, setName] = useState("")
+  const [institution, setInstitution] = useState("")
+  const [email, setEmail] = useState("")
   const [categoryId, setCategoryId] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
@@ -48,12 +52,16 @@ export function ParticipantsTab({ participants, categories }: ParticipantsTabPro
     try {
       const { error } = await supabase.from("participants").insert({
         name,
+        institution,
+        email,
         category_id: categoryId,
       })
 
       if (error) throw error
 
       setName("")
+      setInstitution("")
+      setEmail("")
       setCategoryId("")
       router.refresh()
     } catch (error) {
@@ -108,8 +116,27 @@ export function ParticipantsTab({ participants, categories }: ParticipantsTabPro
                 id="participant-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., Team Alpha"
+                placeholder="Name"
                 required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="participant-institution">Institution</Label>
+              <Input
+                id="participant-institution"
+                value={institution}
+                onChange={(e) => setInstitution(e.target.value)}
+                placeholder="Institution"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="participant-email">Email</Label>
+              <Input
+                id="participant-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
               />
             </div>
             <div className="space-y-2">
@@ -159,7 +186,15 @@ export function ParticipantsTab({ participants, categories }: ParticipantsTabPro
                         key={participant.id}
                         className="flex items-center justify-between p-3 border rounded-lg bg-card"
                       >
-                        <span className="font-medium">{participant.name}</span>
+                        <div className="flex-1">
+                          <div className="font-medium">{participant.name}</div>
+                          {participant.institution && (
+                            <div className="text-sm text-muted-foreground">{participant.institution}</div>
+                          )}
+                          {participant.email && (
+                            <div className="text-sm text-muted-foreground">{participant.email}</div>
+                          )}
+                        </div>
                         <Button
                           variant="ghost"
                           size="icon"

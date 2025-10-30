@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
-import { Save, CheckCircle2 } from "lucide-react"
+import { Save, CheckCircle2, AlertCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 
 type Category = {
   id: string
@@ -19,6 +20,7 @@ type Category = {
 type Participant = {
   id: string
   name: string
+  institution: string | null
 }
 
 type Criterion = {
@@ -33,20 +35,46 @@ type Mark = {
   points: string
 }
 
+type Jury = {
+  id: string
+  name: string
+}
+
 interface MarkEntryFormProps {
   categories: Category[]
 }
 
 export function MarkEntryForm({ categories }: MarkEntryFormProps) {
   const [juryName, setJuryName] = useState("")
+  const [juryList, setJuryList] = useState<Jury[]>([])
   const [selectedCategory, setSelectedCategory] = useState("")
   const [selectedParticipant, setSelectedParticipant] = useState("")
   const [participants, setParticipants] = useState<Participant[]>([])
+  const [unmarkedParticipants, setUnmarkedParticipants] = useState<Set<string>>(new Set())
   const [criteria, setCriteria] = useState<Criterion[]>([])
   const [marks, setMarks] = useState<Mark[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isSaved, setIsSaved] = useState(false)
   const supabase = createClient()
+
+  useEffect(() => {
+    const savedJuryName = localStorage.getItem("iucel_jury_name")
+    if (savedJuryName) {
+      setJuryName(savedJuryName)
+    }
+    loadJuryList()
+  }, [])
+
+  useEffect(() => {
+    if (juryName) {
+      localStorage.setItem("iucel_jury_name", juryName)
+    }
+  }, [juryName])
+
+  const loadJuryList = async () => {
+    const { data } = await supabase.from("jury").select("*").order("name")
+    setJuryList(data || [])
+  }
 
   // Load participants when category changes
   useEffect(() => {
@@ -61,6 +89,12 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
     setMarks([])
   }, [selectedCategory])
 
+  useEffect(() => {
+    if (selectedCategory && juryName) {
+      loadUnmarkedParticipants(selectedCategory, juryName)
+    }
+  }, [selectedCategory, juryName])
+
   // Load existing marks when participant changes
   useEffect(() => {
     if (selectedParticipant && juryName) {
@@ -69,8 +103,42 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
   }, [selectedParticipant, juryName])
 
   const loadParticipants = async (categoryId: string) => {
-    const { data } = await supabase.from("participants").select("id, name").eq("category_id", categoryId).order("name")
+    const { data } = await supabase
+      .from("participants")
+      .select("id, name, institution")
+      .eq("category_id", categoryId)
+      .order("name")
     setParticipants(data || [])
+  }
+
+  const loadUnmarkedParticipants = async (categoryId: string, jury: string) => {
+    // Get all participants in this category
+    const { data: allParticipants } = await supabase.from("participants").select("id").eq("category_id", categoryId)
+
+    if (!allParticipants) return
+
+    // Get all criteria for this category
+    const { data: allCriteria } = await supabase.from("criteria").select("id").eq("category_id", categoryId)
+
+    if (!allCriteria || allCriteria.length === 0) return
+
+    const unmarked = new Set<string>()
+
+    // Check each participant to see if all criteria have been marked by this jury
+    for (const participant of allParticipants) {
+      const { data: marks } = await supabase
+        .from("marks")
+        .select("criterion_id")
+        .eq("participant_id", participant.id)
+        .eq("jury_member_name", jury)
+
+      // If not all criteria are marked, add to unmarked set
+      if (!marks || marks.length < allCriteria.length) {
+        unmarked.add(participant.id)
+      }
+    }
+
+    setUnmarkedParticipants(unmarked)
   }
 
   const loadCriteria = async (categoryId: string) => {
@@ -147,6 +215,11 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
       }
 
       setIsSaved(true)
+
+      if (selectedCategory) {
+        await loadUnmarkedParticipants(selectedCategory, juryName)
+      }
+
       setTimeout(() => setIsSaved(false), 3000)
     } catch (error) {
       console.error("Error saving marks:", error)
@@ -164,45 +237,57 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
     return criteria.reduce((sum, criterion) => sum + criterion.max_points, 0)
   }
 
+  const isParticipantMarked = (participantId: string) => {
+    return !unmarkedParticipants.has(participantId)
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Enter Marks</CardTitle>
-        <CardDescription>Select a category and participant, then enter scores for each criterion</CardDescription>
+        <CardDescription>Select your name, category, and participant to enter scores</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Jury Member Name */}
           <div className="space-y-2">
             <Label htmlFor="jury-name">Your Name (Jury Member)</Label>
-            <Input
-              id="jury-name"
-              value={juryName}
-              onChange={(e) => setJuryName(e.target.value)}
-              placeholder="Enter your name"
-              required
-            />
-          </div>
-
-          {/* Category Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="category">Award Category</Label>
-            <Select value={selectedCategory} onValueChange={setSelectedCategory} required>
+            <Select value={juryName} onValueChange={setJuryName} required>
               <SelectTrigger>
-                <SelectValue placeholder="Select a category" />
+                <SelectValue placeholder="Select your name" />
               </SelectTrigger>
               <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name}
+                {juryList.map((jury) => (
+                  <SelectItem key={jury.id} value={jury.name}>
+                    {jury.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {juryName && (
+              <p className="text-xs text-muted-foreground">Your name is saved. You can change it anytime.</p>
+            )}
           </div>
 
-          {/* Participant Selection */}
-          {selectedCategory && (
+          {/* Category Selection */}
+          {juryName && (
+            <div className="space-y-2">
+              <Label htmlFor="category">Award Category</Label>
+              <Select value={selectedCategory} onValueChange={setSelectedCategory} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {selectedCategory && juryName && (
             <div className="space-y-2">
               <Label htmlFor="participant">Participant</Label>
               <Select value={selectedParticipant} onValueChange={setSelectedParticipant} required>
@@ -212,11 +297,28 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
                 <SelectContent>
                   {participants.map((participant) => (
                     <SelectItem key={participant.id} value={participant.id}>
-                      {participant.name}
+                      <div className="flex items-center justify-between w-full">
+                        <span>{participant.name}</span>
+                        {isParticipantMarked(participant.id) ? (
+                          <Badge variant="secondary" className="ml-2">
+                            Marked
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="ml-2">
+                            Not Marked
+                          </Badge>
+                        )}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {unmarkedParticipants.size > 0 && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>You have {unmarkedParticipants.size} unmarked participant(s) in this category</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -284,6 +386,10 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
             <p className="text-sm text-muted-foreground text-center py-4">
               No participants found for this category. Please add participants in the Admin Setup.
             </p>
+          )}
+
+          {!juryName && (
+            <p className="text-sm text-muted-foreground text-center py-4">Please select your name to continue.</p>
           )}
         </form>
       </CardContent>
