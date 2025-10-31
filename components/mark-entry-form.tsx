@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
-import { Save, CheckCircle2, AlertCircle, ArrowLeft } from "lucide-react"
+import { Save, CheckCircle2, AlertCircle, ArrowLeft, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 
 type Category = {
   id: string
@@ -40,6 +41,13 @@ type Jury = {
   name: string
 }
 
+type ComparisonMark = {
+  participant_id: string
+  participant_name: string
+  criterion_id: string
+  points: number
+}
+
 interface MarkEntryFormProps {
   categories: Category[]
 }
@@ -56,6 +64,10 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [isSaved, setIsSaved] = useState(false)
   const supabase = createClient()
+
+  const [comparisonParticipants, setComparisonParticipants] = useState<string[]>([])
+  const [comparisonMarks, setComparisonMarks] = useState<ComparisonMark[]>([])
+  const [showComparison, setShowComparison] = useState(false)
 
   useEffect(() => {
     const savedJuryName = localStorage.getItem("iucel_jury_name")
@@ -101,6 +113,14 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
       loadExistingMarks()
     }
   }, [selectedParticipant, juryName])
+
+  useEffect(() => {
+    if (comparisonParticipants.length > 0 && juryName && selectedCategory) {
+      loadComparisonMarks()
+    } else {
+      setComparisonMarks([])
+    }
+  }, [comparisonParticipants, juryName, selectedCategory])
 
   const loadParticipants = async (categoryId: string) => {
     const { data } = await supabase
@@ -173,6 +193,26 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
     }
   }
 
+  const loadComparisonMarks = async () => {
+    if (comparisonParticipants.length === 0) return
+
+    const { data } = await supabase
+      .from("marks")
+      .select("participant_id, criterion_id, points, participants(name)")
+      .in("participant_id", comparisonParticipants)
+      .eq("jury_member_name", juryName)
+
+    if (data) {
+      const formattedMarks: ComparisonMark[] = data.map((mark: any) => ({
+        participant_id: mark.participant_id,
+        participant_name: mark.participants?.name || "Unknown",
+        criterion_id: mark.criterion_id,
+        points: mark.points,
+      }))
+      setComparisonMarks(formattedMarks)
+    }
+  }
+
   const handleMarkChange = (criterionId: string, value: string) => {
     setMarks((prevMarks) =>
       prevMarks.map((mark) => (mark.criterion_id === criterionId ? { ...mark, points: value } : mark)),
@@ -241,6 +281,17 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
     return !unmarkedParticipants.has(participantId)
   }
 
+  const toggleComparisonParticipant = (participantId: string) => {
+    setComparisonParticipants((prev) =>
+      prev.includes(participantId) ? prev.filter((id) => id !== participantId) : [...prev, participantId],
+    )
+  }
+
+  const getComparisonMark = (participantId: string, criterionId: string) => {
+    const mark = comparisonMarks.find((m) => m.participant_id === participantId && m.criterion_id === criterionId)
+    return mark?.points
+  }
+
   const handleBack = () => {
     setSelectedCategory("")
     setSelectedParticipant("")
@@ -249,6 +300,9 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
     setParticipants([])
     setUnmarkedParticipants(new Set())
     setIsSaved(false)
+    setComparisonParticipants([])
+    setComparisonMarks([])
+    setShowComparison(false)
     // Note: juryName is preserved in localStorage and state
   }
 
@@ -335,7 +389,55 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
 
           {/* Criteria Scoring */}
           {selectedParticipant && criteria.length > 0 && (
-            <div className="space-y-4">
+            <>
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Compare with Other Participants
+                  </h3>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setShowComparison(!showComparison)}>
+                    {showComparison ? "Hide" : "Show"} Comparison
+                  </Button>
+                </div>
+
+                {showComparison && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {participants
+                        .filter((p) => p.id !== selectedParticipant && isParticipantMarked(p.id))
+                        .map((participant) => (
+                          <div key={participant.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`compare-${participant.id}`}
+                              checked={comparisonParticipants.includes(participant.id)}
+                              onCheckedChange={() => toggleComparisonParticipant(participant.id)}
+                            />
+                            <label
+                              htmlFor={`compare-${participant.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                            >
+                              {participant.name}
+                            </label>
+                          </div>
+                        ))}
+                    </div>
+
+                    {comparisonParticipants.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        Select participants to compare marks
+                      </p>
+                    )}
+
+                    {comparisonParticipants.length > 0 && comparisonMarks.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        No marks found for selected participants
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="border-t pt-4">
                 <h3 className="font-semibold mb-4">Evaluation Criteria</h3>
                 <div className="space-y-4">
@@ -358,6 +460,26 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
                           placeholder="0.0"
                           required
                         />
+
+                        {showComparison && comparisonParticipants.length > 0 && (
+                          <div className="ml-4 space-y-1">
+                            {comparisonParticipants.map((participantId) => {
+                              const participant = participants.find((p) => p.id === participantId)
+                              const compMark = getComparisonMark(participantId, criterion.id)
+                              return (
+                                <div
+                                  key={participantId}
+                                  className="text-sm text-muted-foreground flex items-center gap-2"
+                                >
+                                  <span className="font-medium">{participant?.name}:</span>
+                                  <span className="text-primary font-semibold">
+                                    {compMark !== undefined ? compMark.toFixed(1) : "Not marked"}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -372,6 +494,27 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
                     {getTotalScore().toFixed(1)} / {getMaxTotalScore()}
                   </span>
                 </div>
+
+                {showComparison && comparisonParticipants.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">Comparison Totals:</p>
+                    {comparisonParticipants.map((participantId) => {
+                      const participant = participants.find((p) => p.id === participantId)
+                      const total = criteria.reduce((sum, criterion) => {
+                        const mark = getComparisonMark(participantId, criterion.id)
+                        return sum + (mark || 0)
+                      }, 0)
+                      return (
+                        <div key={participantId} className="flex justify-between items-center text-sm">
+                          <span className="font-medium">{participant?.name}:</span>
+                          <span className="text-primary font-semibold">
+                            {total.toFixed(1)} / {getMaxTotalScore()}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3">
@@ -395,7 +538,7 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
                   )}
                 </Button>
               </div>
-            </div>
+            </>
           )}
 
           {selectedCategory && participants.length === 0 && (
