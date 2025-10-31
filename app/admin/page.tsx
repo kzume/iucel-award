@@ -1,23 +1,23 @@
-import { createClient } from "@/lib/supabase/server"
+"use client"
+
 import { AdminTabs } from "@/components/admin-tabs"
 import { Trophy } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import useSWR from "swr"
 
-export default async function AdminPage() {
-  const supabase = await createClient()
+const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
-  const [categoriesResult, criteriaResult, participantsResult, juryResult] = await Promise.all([
-    supabase.from("categories").select("*").order("name"),
-    supabase.from("criteria").select("*, categories(name)").order("display_order"),
-    supabase.from("participants").select("*, categories(name)").order("name"),
-    supabase.from("jury").select("*").order("name"),
-  ])
+export default function AdminPage() {
+  const { data, isLoading } = useSWR("/api/admin", fetcher, {
+    refreshInterval: 3000, // Auto-refresh every 3 seconds
+    revalidateOnFocus: true,
+  })
 
-  const categories = categoriesResult.data || []
-  const criteria = criteriaResult.data || []
-  const participants = participantsResult.data || []
-  const jury = juryResult.data || []
+  const categories = data?.categories || []
+  const criteria = data?.criteria || []
+  const participants = data?.participants || []
+  const jury = data?.jury || []
 
   return (
     <div className="min-h-screen bg-background">
@@ -36,9 +36,17 @@ export default async function AdminPage() {
                 <p className="text-muted-foreground">Manage competition categories, criteria, and participants</p>
               </div>
             </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              Live
+            </div>
           </div>
 
-          <AdminTabs categories={categories} criteria={criteria} participants={participants} jury={jury} />
+          {isLoading && !data ? (
+            <div className="text-center py-12 text-muted-foreground">Loading...</div>
+          ) : (
+            <AdminTabs categories={categories} criteria={criteria} participants={participants} jury={jury} />
+          )}
         </div>
       </div>
     </div>
