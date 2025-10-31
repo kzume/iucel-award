@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
-import { Save, CheckCircle2, AlertCircle } from "lucide-react"
+import { Save, CheckCircle2, AlertCircle, ArrowLeft } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 type Category = {
@@ -241,6 +241,17 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
     return !unmarkedParticipants.has(participantId)
   }
 
+  const handleBack = () => {
+    setSelectedCategory("")
+    setSelectedParticipant("")
+    setMarks([])
+    setCriteria([])
+    setParticipants([])
+    setUnmarkedParticipants(new Set())
+    setIsSaved(false)
+    // Note: juryName is preserved in localStorage and state
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -363,22 +374,27 @@ export function MarkEntryForm({ categories }: MarkEntryFormProps) {
                 </div>
               </div>
 
-              {/* Submit Button */}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? (
-                  "Saving..."
-                ) : isSaved ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Saved Successfully
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-2" />
-                    Save Marks
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-3">
+                <Button type="button" variant="outline" onClick={handleBack} className="flex-1 bg-transparent">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back
+                </Button>
+                <Button type="submit" className="flex-1" disabled={isLoading}>
+                  {isLoading ? (
+                    "Saving..."
+                  ) : isSaved ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Saved
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Marks
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
 
